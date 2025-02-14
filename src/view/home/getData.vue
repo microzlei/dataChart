@@ -107,7 +107,7 @@
 import { ref, nextTick } from "vue";
 import axios from "axios";
 import md5 from "md5";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElLoading } from "element-plus";
 
 const API = "http://api.cloudeyes.cn/api/method";
 const params = ref({
@@ -152,6 +152,22 @@ const totalProject = ref({
   imgs: [], // 趋势图
   singleProjects: [] // 单个项目数据
 });
+
+// 显示加载中的函数
+const showLoading = () => {
+  return ElLoading.service({
+    lock: true,
+    text: '文档正在导出，请稍后...',
+    background: 'rgba(0, 0, 0, 0.7)',
+  });
+};
+
+// 关闭加载中的函数
+const hideLoading = (loading) => {
+  if (loading && typeof loading.close === 'function') {
+    loading.close();
+  }
+};
 
 // 一个工点
 const singleProject = ref({
@@ -607,19 +623,56 @@ const inputDate = date => {
 
 // 导出word
 const getWord = () => {
-  axios
-    .post("http://localhost:5113/api/Word/GetWord", totalProject.value, {
-      headers: {
-        "Content-Type": "application/json"
-      }
-    })
-    .then(response => {
-      console.log(response.data);
-      openMessage("正在导出，请等待一会儿！", "success");
-    })
-    .catch(error => {
-      openMessage(error.message, "error");
-    });
+  // 使用拦截器
+axios.interceptors.request.use(
+  (config) => {
+    // 判断是否是导出文档的请求
+    if (config.url === 'http://localhost:5113/api/Word/GetWord' && config.method === 'post') {
+      // 显示加载中状态
+      const loading = showLoading();
+      // 将 loading 实例存储到 config 中
+      config.loadingInstance = loading;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+axios.interceptors.response.use(
+  (response) => {
+    // 如果配置中有 loading 实例，则关闭它
+    const loadingInstance = response.config.loadingInstance;
+    hideLoading(loadingInstance);
+
+    return response;
+  },
+  (error) => {
+    // 如果配置中有 loading 实例，则关闭它
+    const loadingInstance = error.config && error.config.loadingInstance;
+    hideLoading(loadingInstance);
+
+    return Promise.reject(error);
+  }
+);
+
+// 导出文档的请求
+axios
+  .post("http://localhost:5113/api/Word/GetWord", totalProject.value, {
+    headers: {
+      "Content-Type": "application/json"
+    },
+    // 可选：添加回调函数，在请求完成时关闭加载
+    // 但拦截器已经处理了关闭逻辑，可以省略
+  })
+  .then(response => {
+    console.log(response.data.message);
+    openMessage("导出成功", "success");
+  })
+  .catch(error => {
+    openMessage(error.message || "导出失败", "error");
+  });
 };
 </script>
 
